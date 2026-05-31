@@ -183,9 +183,18 @@ const App = {
       try {
         const text = await file.text();
         const data = JSON.parse(text);
-        if (!data.id) data.id = 'op_' + Date.now() + '_imp';
+        // Toujours forcer un nouvel id à l'import pour ne JAMAIS écraser
+        // l'opération en cours (même si le JSON importé a un id existant).
+        const ancienId = data.id || '(sans id)';
+        data.id = 'op_' + Date.now() + '_imp_' +
+                   Math.random().toString(36).slice(2, 8);
+        // Marquer le libellé pour distinguer la copie importée de l'originale
+        if (data.station && data.station.libelle &&
+            !data.station.libelle.includes('(importée)')) {
+          data.station.libelle = data.station.libelle + ' (importée)';
+        }
         await DB.put(data);
-        this.toast('Opération importée');
+        this.toast('Opération importée (nouvelle entrée créée)');
         await this.showHome();
       } catch (err) {
         alert('Fichier JSON invalide : ' + err.message);
@@ -382,7 +391,13 @@ const App = {
       if (step && !isNumber) input.step = step;
       input.value = value == null ? '' : value;
     }
-    if (readonly) input.readOnly = true;
+    if (readonly) {
+      input.readOnly = true;
+      input.classList.add('readonly-field');
+      input.style.background = '#eef0f4';
+      input.style.color = '#666';
+      input.style.cursor = 'not-allowed';
+    }
     if (onChange) {
       const handler = () => {
         let v = input.value;
@@ -425,6 +440,12 @@ const App = {
   checkboxGroup({ options, selected, onChange }) {
     const group = document.createElement('div');
     group.className = 'checkbox-group';
+    // État partagé entre toutes les checkboxes du groupe.
+    // On part du tableau initial fourni, et on le met à jour à chaque clic.
+    // Indispensable pour permettre la sélection multiple : sans ça, chaque
+    // checkbox capturait la valeur initiale de `selected` dans sa closure et
+    // les coches successives s'écrasaient mutuellement.
+    const etat = new Set(selected || []);
     options.forEach(opt => {
       const code = typeof opt === 'string' ? opt : opt.code;
       const label = typeof opt === 'string' ? opt : `${opt.code} — ${opt.libelle}`;
@@ -432,11 +453,10 @@ const App = {
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.value = code;
-      cb.checked = (selected || []).includes(code);
+      cb.checked = etat.has(code);
       cb.addEventListener('change', () => {
-        const set = new Set(selected || []);
-        if (cb.checked) set.add(code); else set.delete(code);
-        onChange(Array.from(set));
+        if (cb.checked) etat.add(code); else etat.delete(code);
+        onChange(Array.from(etat));
         this.scheduleSave();
       });
       const span = document.createElement('span');
@@ -535,8 +555,8 @@ const App = {
       const { section, body } = this.section('Débit et pente');
       const g = this.grid();
       g.appendChild(this.field({ label: 'Débit mesuré (m³/s)', type: 'number', step: '0.001', value: st.debit_m3s, onChange: v => st.debit_m3s = v, note: 'Saisir au moins 3 décimales (ex. 0,433) pour le calcul du Strickler' }));
-      g.appendChild(this.field({ label: 'Pente estimée (‰)', type: 'number', step: '0.01', value: st.pente_estimee_pourmille, onChange: v => st.pente_estimee_pourmille = v, note: 'Calculée depuis l\'écran « Pente »' }));
-      g.appendChild(this.field({ label: 'Pente calculée (‰)', type: 'number', step: '0.01', value: st.pente_calculee_pourmille, onChange: v => st.pente_calculee_pourmille = v, note: 'Calculée depuis l\'écran « Pente »' }));
+      g.appendChild(this.field({ label: 'Pente estimée (‰)', type: 'number', step: '0.01', value: st.pente_estimee_pourmille, onChange: v => st.pente_estimee_pourmille = v, note: 'Calcul automatique depuis l\'écran « Pente »', readonly: true }));
+      g.appendChild(this.field({ label: 'Pente calculée (‰)', type: 'number', step: '0.01', value: st.pente_calculee_pourmille, onChange: v => st.pente_calculee_pourmille = v, note: 'Calcul automatique depuis l\'écran « Pente »', readonly: true }));
       body.appendChild(g);
       root.appendChild(section);
     }
@@ -974,7 +994,6 @@ const App = {
           this.renderColmatage();
         }
       }));
-      g.appendChild(this.field({ label: 'Classe ARCHAMBAUD', value: c.classe_archambaud, onChange: v => c.classe_archambaud = v, placeholder: 'optionnel' }));
       body.appendChild(g);
       body.appendChild(this.field({ label: 'Remarques générales', type: 'textarea', value: c.remarques, onChange: v => c.remarques = v, full: true }));
       root.appendChild(section);
