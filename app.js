@@ -36,7 +36,20 @@ const App = {
   // fermer l'application. Mécanisme : on pousse un état dans l'historique
   // au démarrage, et chaque popstate est traité comme un clic sur btn-back
   // sauf si on est déjà à l'accueil (auquel cas l'app peut être fermée).
+  //
+  // Sur PC (desktop), ce mécanisme n'a pas lieu d'être et peut au contraire
+  // perturber la navigation (focus + Entrée, raccourcis clavier, etc.) :
+  // on ne l'active donc QUE si on détecte un environnement mobile.
   bindBackButton() {
+    const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i
+                       .test(navigator.userAgent);
+    if (!isMobile) {
+      // Sur PC, on ne touche pas à l'historique du navigateur.
+      // Les boutons in-app (header back/home) restent les seuls moyens de
+      // navigation, ce qui évite toute interaction parasite.
+      return;
+    }
+
     // Marqueur initial dans l'historique
     window.history.replaceState({ carhyce: 'home' }, '');
     window.history.pushState({ carhyce: 'guard' }, '');
