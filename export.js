@@ -182,6 +182,12 @@ const Exporter = {
 
     // ---- Feuilles Transect ----
     op.transects.forEach(tr => {
+      // Un transect marqué "Suppression" est retiré du protocole (ex. T2
+      // remplacé par T16) : aucune feuille ne doit être générée pour lui,
+      // afin de rester cohérent avec le traitement Python aval.
+      const supprime = (tr.modification && tr.modification.type) === 'Suppression';
+      if (supprime) return;
+      // On exclut aussi les transects désactivés et entièrement vides.
       if (!tr.actif && tr.points.length === 0 && !tr.lpb_m) return;
       const rows = [
         [`Transect T${tr.numero}`],
