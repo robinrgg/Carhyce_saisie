@@ -308,8 +308,10 @@ const App = {
       const releve = allBat.filter(b => b.profondeur_oxy_cm != null).length;
       set('prog-colmatage', `${releve}/${allBat.length} relevés`, releve === allBat.length);
     }
-    // Transects
-    const tActifs = op.transects.filter(t => t.actif);
+    // Transects : on ne compte que les transects retenus (actifs ET non
+    // supprimés). Un transect marqué "Suppression" est retiré du décompte,
+    // par cohérence avec le traitement Python aval.
+    const tActifs = op.transects.filter(t => this.isTransectRetenu(t));
     const tDone = tActifs.filter(t => this.isTransectComplete(t)).length;
     set('prog-transects', `${tDone}/${tActifs.length} transects`, tDone === tActifs.length && tActifs.length > 0);
   },
@@ -325,6 +327,24 @@ const App = {
     if (!tr.facies_affine) return false;
     if (!tr.berge_rg.materiaux || !tr.berge_rd.materiaux) return false;
     return true;
+  },
+
+  // ============================================================
+  //   Règle métier : transects retenus / supprimés
+  //   (symétrique de loader.est_retenu() côté traitement Python)
+  // ============================================================
+
+  // Un transect "Suppression" est retiré du protocole (ex. T2 remplacé par
+  // T16) : il ne doit plus être comptabilisé ni exporté.
+  // "Déplacement" (décalage de quelques cm) et "Ajout" (T16-T18) restent
+  // pleinement retenus.
+  isTransectSupprime(tr) {
+    return (tr.modification && tr.modification.type) === 'Suppression';
+  },
+
+  // Transect pris en compte dans le traitement aval : actif ET non supprimé.
+  isTransectRetenu(tr) {
+    return tr.actif && !this.isTransectSupprime(tr);
   },
 
   // ============================================================
@@ -1178,21 +1198,35 @@ const App = {
     list.innerHTML = '';
     op.transects.forEach((tr, idx) => {
       const li = document.createElement('li');
-      if (!tr.actif) li.classList.add('inactive');
+      const supprime = this.isTransectSupprime(tr);
+      // Un transect supprimé OU désactivé est grisé dans la liste.
+      if (!tr.actif || supprime) li.classList.add('inactive');
       const num = document.createElement('span');
       num.className = 't-num';
       num.textContent = 'T' + tr.numero;
       const info = document.createElement('span');
       info.className = 't-info';
       const npts = tr.points.length;
-      const status = !tr.actif ? 'désactivé'
+      // Le statut "supprimé" prime sur tout : le transect est retiré du
+      // protocole et ne sera ni comptabilisé ni exporté.
+      const status = supprime ? 'supprimé'
+        : !tr.actif ? 'désactivé'
         : this.isTransectComplete(tr) ? 'complet'
         : (npts > 0 || tr.lpb_m) ? 'partiel'
         : 'à saisir';
-      info.innerHTML = `<strong>${tr.facies_affine || tr.facies_simplifie || '—'}</strong><br><small>${npts} points · Lpb=${tr.lpb_m ?? '—'} m</small>`;
+      info.innerHTML = supprime
+        ? `<strong>Transect supprimé</strong><br><small>${tr.modification.raison || 'retiré du protocole'}</small>`
+        : `<strong>${tr.facies_affine || tr.facies_simplifie || '—'}</strong><br><small>${npts} points · Lpb=${tr.lpb_m ?? '—'} m</small>`;
       const st = document.createElement('span');
-      st.className = 't-status ' + (status === 'complet' ? 'done' : status === 'partiel' ? 'partial' : 'todo');
-      st.textContent = status === 'désactivé' ? '○' : (status === 'complet' ? '✓' : status === 'partiel' ? '…' : '·');
+      st.className = 't-status ' + (status === 'complet' ? 'done'
+        : status === 'partiel' ? 'partial'
+        : status === 'supprimé' ? 'supprime'
+        : 'todo');
+      st.textContent = status === 'supprimé' ? '✕'
+        : status === 'désactivé' ? '○'
+        : status === 'complet' ? '✓'
+        : status === 'partiel' ? '…'
+        : '·';
       const tog = document.createElement('button');
       tog.className = 'secondary-btn';
       tog.style.flex = '0';
@@ -1270,11 +1304,18 @@ const App = {
       body.appendChild(distPeauRow);
 
       const g2 = this.grid();
-      g2.appendChild(this.field({ label: 'Modification du transect', type: 'select', options: NOM.modification_transect, value: tr.modification.type, onChange: v => tr.modification.type = v }));
+      g2.appendChild(this.field({ label: 'Modification du transect', type: 'select', options: NOM.modification_transect, value: tr.modification.type, onChange: v => { tr.modification.type = v; this.refreshModificationNote(); } }));
       g2.appendChild(this.field({ label: 'Raison de la modification', value: tr.modification.raison, onChange: v => tr.modification.raison = v }));
       body.appendChild(g2);
 
+      // Bandeau explicatif selon le type de modification choisi :
+      // rappelle à l'opérateur l'incidence d'un "Suppression" sur le traitement.
+      const noteWrap = document.createElement('div');
+      noteWrap.id = 'modification-note';
+      body.appendChild(noteWrap);
+
       root.appendChild(section);
+      this.refreshModificationNote();
     }
 
     // --- Points de mesure (lit)
@@ -1613,6 +1654,25 @@ const App = {
 
     this.refreshTransectCalc();
     this.refreshProfileChart();
+  },
+
+  // Affiche un bandeau d'avertissement quand le transect est marqué
+  // "Suppression" : rappelle qu'il sera exclu des calculs, figures et PDF.
+  refreshModificationNote() {
+    const wrap = document.getElementById('modification-note');
+    if (!wrap) return;
+    const tr = this.state.op.transects[this.state.currentTransect];
+    wrap.innerHTML = '';
+    const type = tr.modification && tr.modification.type;
+    if (type === 'Suppression') {
+      const banner = document.createElement('div');
+      banner.className = 'warn-banner';
+      banner.innerHTML = '⚠ Ce transect est marqué <strong>Suppression</strong> : '
+        + 'il sera <strong>exclu</strong> des calculs, des figures et du PDF '
+        + '(données conservées dans le JSON, mais non comptabilisées). '
+        + 'À utiliser lorsqu\'un transect est retiré du protocole et remplacé par un autre.';
+      wrap.appendChild(banner);
+    }
   },
 
   refreshTransectCalc() {
