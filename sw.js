@@ -1,8 +1,8 @@
 /* ============================================================
-   Service Worker - CARHYCE Saisie Terrain — v3
+   Service Worker - CARHYCE Saisie Terrain — v4
    ------------------------------------------------------------
    Stratégie :
-   - Ressources locales (HTML/CSS/JS/manifest/icon) → network-first
+   - Ressources locales (HTML/CSS/JS/manifest/icon/PDF) → network-first
      avec timeout court et fallback cache. Garantit que les MAJ
      poussées sur GitHub Pages arrivent immédiatement quand
      l'utilisateur est en ligne, tout en gardant l'autonomie
@@ -11,9 +11,12 @@
    - skipWaiting + clients.claim → la nouvelle version prend le
      contrôle dès qu'elle est installée, sans nécessiter de
      fermer/rouvrir l'app.
+
+   Le protocole CARHYCE (protocole_carhyce.pdf) est pré-caché pour
+   rester consultable hors-ligne sur le terrain.
    ============================================================ */
 
-const CACHE_VERSION = 'carhyce-v8';
+const CACHE_VERSION = 'carhyce-v9';
 const NETWORK_TIMEOUT_MS = 3000;
 
 const PRECACHE_URLS = [
@@ -26,6 +29,7 @@ const PRECACHE_URLS = [
   './export.js',
   './manifest.webmanifest',
   './icon.svg',
+  './protocole_carhyce.pdf',
   'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
 ];
 
