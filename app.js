@@ -554,15 +554,62 @@ const App = {
       root.appendChild(section);
     }
 
-    // --- Coordonnées (RGF93 Lambert 93)
+    // --- Coordonnées : saisie GPS en WGS84 puis conversion en Lambert 93
+    //     En pratique les coordonnées terrain sont toujours relevées en WGS84.
+    //     Le bouton convertit en RGF93 / Lambert 93 (via geo.js) et remplit
+    //     les champs X/Y, qui restent éditables manuellement si besoin.
     {
-      const { section, body } = this.section('Coordonnées RGF93 / Lambert 93 (m)');
-      const g = this.grid();
-      g.appendChild(this.field({ label: 'X amont (m)', type: 'number', value: st.x_amont, onChange: v => st.x_amont = v }));
-      g.appendChild(this.field({ label: 'Y amont (m)', type: 'number', value: st.y_amont, onChange: v => st.y_amont = v }));
-      g.appendChild(this.field({ label: 'X aval (m)', type: 'number', value: st.x_aval, onChange: v => st.x_aval = v }));
-      g.appendChild(this.field({ label: 'Y aval (m)', type: 'number', value: st.y_aval, onChange: v => st.y_aval = v }));
-      body.appendChild(g);
+      const { section, body } = this.section('Coordonnées de la station');
+
+      const info = document.createElement('div');
+      info.className = 'info-banner';
+      info.textContent = 'Saisir les coordonnées GPS en WGS84 (degrés décimaux), '
+        + 'puis convertir en Lambert 93. Les champs L93 restent modifiables.';
+      body.appendChild(info);
+
+      // Saisie WGS84 (relevé GPS terrain)
+      const gWgs = this.grid();
+      gWgs.appendChild(this.field({ label: 'Latitude amont (WGS84, °)',  type: 'number', value: st.lat_amont, onChange: v => st.lat_amont = v, placeholder: 'ex. 43.2965' }));
+      gWgs.appendChild(this.field({ label: 'Longitude amont (WGS84, °)', type: 'number', value: st.lon_amont, onChange: v => st.lon_amont = v, placeholder: 'ex. 5.3698' }));
+      gWgs.appendChild(this.field({ label: 'Latitude aval (WGS84, °)',   type: 'number', value: st.lat_aval,  onChange: v => st.lat_aval = v }));
+      gWgs.appendChild(this.field({ label: 'Longitude aval (WGS84, °)',  type: 'number', value: st.lon_aval,  onChange: v => st.lon_aval = v }));
+      body.appendChild(gWgs);
+
+      // Bouton de conversion WGS84 -> Lambert 93
+      const convWrap = document.createElement('div');
+      convWrap.className = 'card-action';
+      const btnConv = document.createElement('button');
+      btnConv.type = 'button';
+      btnConv.className = 'primary-btn';
+      btnConv.textContent = '↻ Convertir WGS84 → Lambert 93';
+      btnConv.addEventListener('click', () => {
+        if (typeof GEO === 'undefined') {
+          this.toast('Module de conversion (geo.js) non chargé.');
+          return;
+        }
+        const amont = GEO.wgs84ToL93(st.lat_amont, st.lon_amont);
+        const aval  = GEO.wgs84ToL93(st.lat_aval,  st.lon_aval);
+        if (!amont && !aval) {
+          this.toast('Saisir au moins un couple latitude/longitude valide.');
+          return;
+        }
+        if (amont) { st.x_amont = amont.x; st.y_amont = amont.y; }
+        if (aval)  { st.x_aval  = aval.x;  st.y_aval  = aval.y; }
+        this.renderStation();   // ré-affiche les champs L93 mis à jour
+        this.scheduleSave();
+        this.toast('Coordonnées converties en Lambert 93.');
+      });
+      convWrap.appendChild(btnConv);
+      body.appendChild(convWrap);
+
+      // Coordonnées RGF93 / Lambert 93 (résultat de la conversion, éditables)
+      const gL93 = this.grid();
+      gL93.appendChild(this.field({ label: 'X amont (L93, m)', type: 'number', value: st.x_amont, onChange: v => st.x_amont = v }));
+      gL93.appendChild(this.field({ label: 'Y amont (L93, m)', type: 'number', value: st.y_amont, onChange: v => st.y_amont = v }));
+      gL93.appendChild(this.field({ label: 'X aval (L93, m)',  type: 'number', value: st.x_aval,  onChange: v => st.x_aval = v }));
+      gL93.appendChild(this.field({ label: 'Y aval (L93, m)',  type: 'number', value: st.y_aval,  onChange: v => st.y_aval = v }));
+      body.appendChild(gL93);
+
       root.appendChild(section);
     }
 
@@ -1058,7 +1105,26 @@ const App = {
       meta.appendChild(this.field({ label: 'Y L93 (m)', type: 'number', value: r.y_l93, onChange: v => r.y_l93 = v }));
       meta.appendChild(this.field({ label: 'Indice de repérage du radier', value: r.indice_position, onChange: v => r.indice_position = v, full: true, placeholder: 'ex. à 1,5 m sous bloc en RG' }));
       meta.appendChild(this.field({ label: 'Remarques radier', value: r.remarques, onChange: v => r.remarques = v, full: true }));
+
+      // Bouton de conversion WGS84 -> L93 pour ce radier
       body.appendChild(meta);
+      const convWrap = document.createElement('div');
+      convWrap.className = 'card-action';
+      const btnConv = document.createElement('button');
+      btnConv.type = 'button';
+      btnConv.className = 'secondary-btn';
+      btnConv.textContent = '↻ Convertir WGS84 → L93';
+      btnConv.addEventListener('click', () => {
+        if (typeof GEO === 'undefined') { this.toast('Module geo.js non chargé.'); return; }
+        const res = GEO.wgs84ToL93(r.lat, r.lon);
+        if (!res) { this.toast('Saisir une latitude/longitude valide.'); return; }
+        r.x_l93 = res.x; r.y_l93 = res.y;
+        this.renderColmatage();
+        this.scheduleSave();
+        this.toast(`Radier ${r.id} converti en L93.`);
+      });
+      convWrap.appendChild(btnConv);
+      body.appendChild(convWrap);
 
       // Nombre de bâtonnets
       const nb = this.grid();
