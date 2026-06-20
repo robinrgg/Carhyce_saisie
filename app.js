@@ -133,6 +133,11 @@ const App = {
       backBtn.title = 'Retour à la liste des transects';
       homeBtn.hidden = false;
       homeBtn.title = 'Retour à l\'accueil CARHYCE';
+    } else if (s === 'fusion') {
+      // Fusion : outil lancé depuis l'accueil, pas de parent "opération"
+      backBtn.hidden = true;
+      homeBtn.hidden = false;
+      homeBtn.title = 'Retour à l\'accueil CARHYCE';
     } else {
       // Station, granulo, pente, colmatage, transects, export
       backBtn.hidden = false;
@@ -190,6 +195,14 @@ const App = {
     document.getElementById('btn-import').addEventListener('click', () =>
       document.getElementById('file-import').click()
     );
+    const btnFusion = document.getElementById('btn-fusion');
+    if (btnFusion) {
+      btnFusion.addEventListener('click', () => {
+        this.state.fusion = null;   // repart d'un état neuf
+        this.renderFusion();
+        this.showScreen('fusion');
+      });
+    }
     document.getElementById('file-import').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -345,6 +358,248 @@ const App = {
   // Transect pris en compte dans le traitement aval : actif ET non supprimé.
   isTransectRetenu(tr) {
     return tr.actif && !this.isTransectSupprime(tr);
+  },
+
+  // ============================================================
+  //   ÉCRAN FUSION (combine deux opérations enregistrées)
+  // ============================================================
+  async renderFusion() {
+    if (!this.state.fusion) {
+      this.state.fusion = { aId: null, bId: null, sections: {}, transects: {} };
+    }
+    const f = this.state.fusion;
+    const root = document.getElementById('form-fusion');
+    root.innerHTML = '';
+
+    const ops = await DB.list();
+    if (ops.length < 2) {
+      const b = document.createElement('div');
+      b.className = 'info-banner';
+      b.textContent = "Il faut au moins deux opérations enregistrées pour fusionner. "
+        + "Importez d'abord les JSON des deux appareils (bouton « Importer un JSON » à l'accueil).";
+      root.appendChild(b);
+      return;
+    }
+
+    // Défauts de sélection des opérations
+    if (!f.aId || !ops.some(o => o.id === f.aId)) f.aId = ops[0].id;
+    if (!f.bId || !ops.some(o => o.id === f.bId) || f.bId === f.aId) {
+      f.bId = (ops.find(o => o.id !== f.aId) || ops[1]).id;
+    }
+
+    // --- Sélection des deux opérations
+    {
+      const { section, body } = this.section('Opérations à fusionner');
+      const g = this.grid();
+      g.appendChild(this._fusionSelect('Opération A', ops, f.aId, id => {
+        f.aId = id; f.sections = {}; f.transects = {}; this.renderFusion();
+      }));
+      g.appendChild(this._fusionSelect('Opération B', ops, f.bId, id => {
+        f.bId = id; f.sections = {}; f.transects = {}; this.renderFusion();
+      }));
+      body.appendChild(g);
+      root.appendChild(section);
+    }
+
+    if (f.aId === f.bId) {
+      const b = document.createElement('div');
+      b.className = 'warn-banner';
+      b.textContent = 'Sélectionnez deux opérations différentes.';
+      root.appendChild(b);
+      return;
+    }
+
+    const opA = await DB.get(f.aId);
+    const opB = await DB.get(f.bId);
+    const sv = o => (o.meta && o.meta.schema_version) || '';
+    if (sv(opA) !== '1.0' || sv(opB) !== '1.0') {
+      const b = document.createElement('div');
+      b.className = 'warn-banner';
+      b.textContent = 'Schéma incompatible (version 1.0 attendue). Fusion impossible.';
+      root.appendChild(b);
+      return;
+    }
+    if (!Fusion.memeStation(opA, opB)) {
+      const b = document.createElement('div');
+      b.className = 'warn-banner';
+      b.innerHTML = '⚠ Les deux opérations ne semblent pas correspondre à la même station '
+        + '(code/libellé différents). Vérifiez avant de fusionner.';
+      root.appendChild(b);
+    }
+
+    // Défauts : onglet -> côté le plus rempli
+    Fusion.SECTIONS.forEach(s => {
+      if (!f.sections[s.key]) {
+        f.sections[s.key] =
+          Fusion.scoreSection(opB, s.key) > Fusion.scoreSection(opA, s.key) ? 'B' : 'A';
+      }
+    });
+    // Défauts : transect -> seul côté porteur de données (sinon aucun)
+    for (let n = 1; n <= 18; n++) {
+      if (f.transects[n] === undefined) {
+        const da = Fusion.aDesDonnees(Fusion.trParNumero(opA, n));
+        const db = Fusion.aDesDonnees(Fusion.trParNumero(opB, n));
+        f.transects[n] = da && !db ? 'A' : db && !da ? 'B' : null;
+      }
+    }
+
+    // --- Choix par onglet entier
+    {
+      const { section, body } = this.section('Onglets (choix par onglet entier)');
+      Fusion.SECTIONS.forEach(s => {
+        body.appendChild(this._fusionRowSection(s, opA, opB, f));
+      });
+      root.appendChild(section);
+    }
+
+    // --- Choix transect par transect
+    {
+      const { section, body } = this.section('Transects (choix transect par transect)');
+      const info = document.createElement('div');
+      info.className = 'info-banner';
+      info.textContent = "Cochez la source à conserver pour chaque transect (A ou B, exclusif). "
+        + "Aucune case cochée = transect laissé vide.";
+      body.appendChild(info);
+
+      const wrap = document.createElement('div');
+      wrap.className = 'points-table-wrapper';
+      const table = document.createElement('table');
+      table.className = 'points-table';
+      const thead = document.createElement('thead');
+      thead.innerHTML = '<tr><th>Transect</th><th>A</th><th>État A</th>'
+        + '<th>B</th><th>État B</th></tr>';
+      table.appendChild(thead);
+      const tb = document.createElement('tbody');
+      for (let n = 1; n <= 18; n++) {
+        const trA = Fusion.trParNumero(opA, n);
+        const trB = Fusion.trParNumero(opB, n);
+        const stA = Fusion.statutTransect(trA);
+        const stB = Fusion.statutTransect(trB);
+        const visible = (trA && trA.actif) || (trB && trB.actif)
+          || Fusion.aDesDonnees(trA) || Fusion.aDesDonnees(trB)
+          || stA.code === 'supprime' || stB.code === 'supprime';
+        if (!visible) continue;
+        tb.appendChild(this._fusionRowTransect(n, stA, stB, f));
+      }
+      table.appendChild(tb);
+      wrap.appendChild(table);
+      body.appendChild(wrap);
+      root.appendChild(section);
+    }
+
+    // --- Génération
+    {
+      const { section, body } = this.section('Générer');
+      const btn = document.createElement('button');
+      btn.className = 'primary-btn';
+      btn.textContent = '✓ Générer l\'opération fusionnée';
+      btn.addEventListener('click', async () => {
+        const gabarit = DB.newOperation();
+        const merged = Fusion.assembler(
+          opA, opB, { sections: f.sections, transects: f.transects }, gabarit);
+        await DB.put(merged);
+        this.state.fusion = null;
+        this.toast('Opération fusionnée créée');
+        await this.openOperation(merged.id);
+      });
+      body.appendChild(btn);
+      root.appendChild(section);
+    }
+  },
+
+  // Sélecteur d'opération (sans déclencher scheduleSave, contrairement à field()).
+  _fusionSelect(label, ops, currentId, onChange) {
+    const f = document.createElement('div');
+    f.className = 'field';
+    const lbl = document.createElement('label');
+    lbl.textContent = label;
+    f.appendChild(lbl);
+    const sel = document.createElement('select');
+    ops.forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = o.id;
+      const lib = o.station.libelle || o.station.code || '(sans nom)';
+      const sub = [o.station.date, o.station.operateurs].filter(Boolean).join(' · ');
+      opt.textContent = sub ? `${lib} — ${sub}` : lib;
+      if (o.id === currentId) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener('change', () => onChange(sel.value));
+    f.appendChild(sel);
+    return f;
+  },
+
+  // Ligne de choix d'un onglet entier (radios A/B mutuellement exclusifs).
+  _fusionRowSection(s, opA, opB, f) {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.gap = '0.6rem';
+    row.style.flexWrap = 'wrap';
+    row.style.padding = '0.45rem 0';
+    row.style.borderBottom = '1px solid var(--border)';
+
+    const name = document.createElement('div');
+    name.style.fontWeight = '600';
+    name.style.minWidth = '110px';
+    name.textContent = s.label;
+    row.appendChild(name);
+
+    const mk = (side, op) => {
+      const lab = document.createElement('label');
+      lab.style.display = 'inline-flex';
+      lab.style.alignItems = 'center';
+      lab.style.gap = '0.3rem';
+      lab.style.fontSize = '0.85rem';
+      const rb = document.createElement('input');
+      rb.type = 'radio';
+      rb.name = 'fus_sec_' + s.key;
+      rb.checked = f.sections[s.key] === side;
+      rb.addEventListener('change', () => { if (rb.checked) f.sections[s.key] = side; });
+      const span = document.createElement('span');
+      span.textContent = `${side} — ${Fusion.completude(op, s.key)}`;
+      lab.appendChild(rb);
+      lab.appendChild(span);
+      return lab;
+    };
+    row.appendChild(mk('A', opA));
+    row.appendChild(mk('B', opB));
+    return row;
+  },
+
+  // Ligne de choix d'un transect (cases A/B exclusives, décochables).
+  _fusionRowTransect(n, stA, stB, f) {
+    const tr = document.createElement('tr');
+    const tdN = document.createElement('td');
+    tdN.className = 'col-num';
+    tdN.textContent = 'T' + n;
+    tr.appendChild(tdN);
+
+    const cbA = document.createElement('input');
+    cbA.type = 'checkbox';
+    cbA.checked = f.transects[n] === 'A';
+    cbA.disabled = stA.code === 'absent';
+    const cbB = document.createElement('input');
+    cbB.type = 'checkbox';
+    cbB.checked = f.transects[n] === 'B';
+    cbB.disabled = stB.code === 'absent';
+
+    cbA.addEventListener('change', () => {
+      if (cbA.checked) { f.transects[n] = 'A'; cbB.checked = false; }
+      else if (f.transects[n] === 'A') { f.transects[n] = null; }
+    });
+    cbB.addEventListener('change', () => {
+      if (cbB.checked) { f.transects[n] = 'B'; cbA.checked = false; }
+      else if (f.transects[n] === 'B') { f.transects[n] = null; }
+    });
+
+    const tdA = document.createElement('td'); tdA.appendChild(cbA); tr.appendChild(tdA);
+    const tdSA = document.createElement('td');
+    tdSA.textContent = stA.label; tdSA.style.fontSize = '0.8rem'; tr.appendChild(tdSA);
+    const tdB = document.createElement('td'); tdB.appendChild(cbB); tr.appendChild(tdB);
+    const tdSB = document.createElement('td');
+    tdSB.textContent = stB.label; tdSB.style.fontSize = '0.8rem'; tr.appendChild(tdSB);
+    return tr;
   },
 
   // ============================================================

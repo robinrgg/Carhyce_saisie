@@ -27,6 +27,7 @@
       <div class="card-action">
         <button id="btn-new-op" class="primary-btn">＋ Nouvelle opération</button>
         <button id="btn-import" class="secondary-btn">⤓ Importer un JSON</button>
+        <button id="btn-fusion" class="secondary-btn">⤙ Fusionner deux opérations</button>
         <input type="file" id="file-import" accept=".json" hidden>
       </div>
       <h2>Opérations enregistrées</h2>
@@ -111,6 +112,13 @@
       <pre id="json-preview" class="json-preview"></pre>
     </section>
 
+    <!-- ÉCRAN FUSION -->
+    <section id="screen-fusion" class="screen">
+      <h2>Fusion de deux opérations</h2>
+      <p class="muted small">Choisissez deux opérations enregistrées, puis, pour chaque onglet et chaque transect, la source à conserver (A ou B). Une nouvelle opération fusionnée est créée ; les deux sources restent intactes.</p>
+      <div id="form-fusion"></div>
+    </section>
+
   </main>
 
   <!-- Toast de notification -->
@@ -122,6 +130,7 @@
   <script src="nomenclatures.js" defer></script>
   <script src="geo.js" defer></script>
   <script src="db.js" defer></script>
+  <script src="fusion.js" defer></script>
   <script src="export.js" defer></script>
   <script src="app.js" defer></script>
 </body>

@@ -1,5 +1,5 @@
 /* ============================================================
-   Service Worker - CARHYCE Saisie Terrain — v5
+   Service Worker - CARHYCE Saisie Terrain — v6
    ------------------------------------------------------------
    Stratégie :
    - Ressources locales (HTML/CSS/JS/manifest/icon/PDF) → network-first
@@ -16,7 +16,7 @@
    rester consultable hors-ligne sur le terrain.
    ============================================================ */
 
-const CACHE_VERSION = 'carhyce-v10';
+const CACHE_VERSION = 'carhyce-v11';
 const NETWORK_TIMEOUT_MS = 3000;
 
 const PRECACHE_URLS = [
@@ -26,6 +26,7 @@ const PRECACHE_URLS = [
   './nomenclatures.js',
   './geo.js',
   './db.js',
+  './fusion.js',
   './app.js',
   './export.js',
   './manifest.webmanifest',
