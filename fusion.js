@@ -146,9 +146,21 @@ const Fusion = {
 
     for (let n = 1; n <= 18; n++) {
       const ch = choix.transects[n];
+      const a = this.trParNumero(opA, n);
+      const b = this.trParNumero(opB, n);
       let tr = null;
-      if (ch === 'A') tr = this.trParNumero(opA, n);
-      else if (ch === 'B') tr = this.trParNumero(opB, n);
+      if (ch === 'A') tr = a;
+      else if (ch === 'B') tr = b;
+      else {
+        // Aucune source choisie. À ce stade le transect ne porte de données
+        // d'aucun côté (sinon le verrou de l'UI interdit la génération). Si les
+        // deux côtés l'écartent (désactivé ou supprimé), on conserve cet état
+        // plutôt que de le réactiver via le gabarit ; sinon transect vierge.
+        const aEcarte = a && (!a.actif || this.estSupprime(a));
+        const bEcarte = b && (!b.actif || this.estSupprime(b));
+        if ((a || b) && aEcarte && bEcarte) tr = a || b;
+        else tr = this.trParNumero(gabarit, n);
+      }
       if (!tr) tr = this.trParNumero(gabarit, n) || { numero: n };
       tr = this._clone(tr);
       tr.numero = n;

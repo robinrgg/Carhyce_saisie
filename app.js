@@ -452,6 +452,9 @@ const App = {
       root.appendChild(section);
     }
 
+    // Met à jour l'état du bouton Générer (réassigné dans le bloc plus bas).
+    let majGen = () => {};
+
     // --- Choix transect par transect
     {
       const { section, body } = this.section('Transects (choix transect par transect)');
@@ -479,7 +482,7 @@ const App = {
           || Fusion.aDesDonnees(trA) || Fusion.aDesDonnees(trB)
           || stA.code === 'supprime' || stB.code === 'supprime';
         if (!visible) continue;
-        tb.appendChild(this._fusionRowTransect(n, stA, stB, f));
+        tb.appendChild(this._fusionRowTransect(n, stA, stB, f, () => majGen()));
       }
       table.appendChild(tb);
       wrap.appendChild(table);
@@ -490,10 +493,16 @@ const App = {
     // --- Génération
     {
       const { section, body } = this.section('Générer');
+
+      const warn = document.createElement('div');
+      warn.className = 'warn-banner';
+      warn.hidden = true;
+
       const btn = document.createElement('button');
       btn.className = 'primary-btn';
       btn.textContent = '✓ Générer l\'opération fusionnée';
       btn.addEventListener('click', async () => {
+        if (btn.disabled) return;
         const gabarit = DB.newOperation();
         const merged = Fusion.assembler(
           opA, opB, { sections: f.sections, transects: f.transects }, gabarit);
@@ -502,8 +511,38 @@ const App = {
         this.toast('Opération fusionnée créée');
         await this.openOperation(merged.id);
       });
+
+      // Verrou : interdit la génération tant qu'un transect porteur de données
+      // n'est pas attribué à une source (évite d'en oublier un). Rafraîchi à
+      // chaque clic de case via le callback passé aux lignes transect.
+      majGen = () => {
+        const manquants = [];
+        for (let n = 1; n <= 18; n++) {
+          const aDonnees = Fusion.aDesDonnees(Fusion.trParNumero(opA, n))
+            || Fusion.aDesDonnees(Fusion.trParNumero(opB, n));
+          const choisi = f.transects[n] === 'A' || f.transects[n] === 'B';
+          if (aDonnees && !choisi) manquants.push('T' + n);
+        }
+        if (manquants.length) {
+          btn.disabled = true;
+          btn.style.opacity = '0.5';
+          btn.style.cursor = 'not-allowed';
+          warn.hidden = false;
+          warn.textContent = 'Attribuez une source (A ou B) à chaque transect porteur '
+            + 'de données avant de générer, pour n\'en oublier aucun. '
+            + 'À compléter : ' + manquants.join(', ') + '.';
+        } else {
+          btn.disabled = false;
+          btn.style.opacity = '';
+          btn.style.cursor = '';
+          warn.hidden = true;
+        }
+      };
+
+      body.appendChild(warn);
       body.appendChild(btn);
       root.appendChild(section);
+      majGen();   // état initial
     }
   },
 
@@ -568,7 +607,7 @@ const App = {
   },
 
   // Ligne de choix d'un transect (cases A/B exclusives, décochables).
-  _fusionRowTransect(n, stA, stB, f) {
+  _fusionRowTransect(n, stA, stB, f, onChange) {
     const tr = document.createElement('tr');
     const tdN = document.createElement('td');
     tdN.className = 'col-num';
@@ -587,10 +626,12 @@ const App = {
     cbA.addEventListener('change', () => {
       if (cbA.checked) { f.transects[n] = 'A'; cbB.checked = false; }
       else if (f.transects[n] === 'A') { f.transects[n] = null; }
+      if (onChange) onChange();
     });
     cbB.addEventListener('change', () => {
       if (cbB.checked) { f.transects[n] = 'B'; cbA.checked = false; }
       else if (f.transects[n] === 'B') { f.transects[n] = null; }
+      if (onChange) onChange();
     });
 
     const tdA = document.createElement('td'); tdA.appendChild(cbA); tr.appendChild(tdA);
