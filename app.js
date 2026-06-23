@@ -758,7 +758,7 @@ const App = {
       e.preventDefault();
       const foci = Array.from(container.querySelectorAll('input'))
         .filter(el => el.type !== 'button' && !el.disabled && !el.readOnly
-                       && el.offsetParent !== null);
+                       && !el.dataset.skipNext && el.offsetParent !== null);
       const i = foci.indexOf(inp);
       if (i > -1 && i + 1 < foci.length) {
         const nx = foci[i + 1];
@@ -1777,6 +1777,14 @@ const App = {
       tools.appendChild(clearBtn);
       body.appendChild(tools);
 
+      // Aide : rappelle l'usage de la colonne d'appoint « Lecture mire ».
+      const mireHint = document.createElement('div');
+      mireHint.textContent = 'Remplir la colonne « Lecture mire » (en vert) pour obtenir automatiquement la profondeur.';
+      mireHint.style.fontSize = '0.8rem';
+      mireHint.style.color = '#2e7d32';
+      mireHint.style.margin = '2px 0 6px';
+      body.appendChild(mireHint);
+
       // Tableau des points
       const wrap = document.createElement('div');
       wrap.className = 'points-table-wrapper';
@@ -1787,6 +1795,7 @@ const App = {
         <tr>
           <th>n°</th>
           <th>Distance (m)</th>
+          <th style="color:#1b5e20">Lecture mire (cm)<br><small>appoint (vert) · hauteur sous le plein bord</small></th>
           <th>Profondeur (cm)<br><small>négatif = berge / hors d'eau</small></th>
           <th>Substrat min.</th>
           <th>Add. 1</th>
@@ -1817,6 +1826,34 @@ const App = {
         distTd.appendChild(dInp);
         row.appendChild(distTd);
         this._wireNext(dInp, table);
+
+        // Colonne d'appoint « Lecture mire » (verte) : hauteur lue sous le plein
+        // bord (L, positive vers le chenal). profondeur = L − Hpb·100.
+        // Non stockée dans le JSON : seulement une aide de saisie, re-dérivée de
+        // la profondeur (= profondeur + Hpb·100) à la réouverture.
+        const mireTd = document.createElement('td');
+        mireTd.className = 'col-mire';
+        mireTd.style.minWidth = '92px';
+        const mInp = document.createElement('input');
+        mInp.type = 'text'; mInp.inputMode = 'decimal'; mInp.autocomplete = 'off';
+        mInp.dataset.skipNext = '1';   // hors enchaînement « suivant »
+        mInp.style.width = '100%';
+        mInp.style.background = '#e8f5e9';
+        mInp.style.border = '1px solid #4caf50';
+        mInp.style.color = '#1b5e20';
+        const _offsetMire = () => (tr.hpb_m != null ? Math.round(tr.hpb_m * 100) : null);
+        const _oInit = _offsetMire();
+        mInp.value = (pt.profondeur_cm != null && _oInit != null)
+          ? +(pt.profondeur_cm + _oInit).toFixed(2) : '';
+        if (tr.hpb_m == null) {
+          mInp.disabled = true;
+          mInp.title = 'Renseigner Hpb (hauteur plein bord) pour utiliser la lecture mire';
+          mInp.style.background = '#eef0f4';
+          mInp.style.borderColor = '#ccc';
+          mInp.style.color = '#999';
+        }
+        mireTd.appendChild(mInp);
+        row.appendChild(mireTd);
 
         // Profondeur — bouton ± à gauche pour inverser le signe
         // (les claviers numériques mobiles n'affichent pas toujours le -)
@@ -1852,6 +1889,21 @@ const App = {
         pInp.style.minWidth = '3.6em';
         pInp.addEventListener('input', () => {
           pt.profondeur_cm = parseNum(pInp.value);
+          // refléter dans la colonne d'appoint (lecture = profondeur + Hpb·100)
+          const o = tr.hpb_m != null ? Math.round(tr.hpb_m * 100) : null;
+          if (o != null) mInp.value = pt.profondeur_cm == null ? '' : +(pt.profondeur_cm + o).toFixed(2);
+          this.refreshProfileChart();
+          this.refreshTransectCalc();
+          this.scheduleSave();
+        });
+
+        // Saisie via la lecture mire → calcule la profondeur (= L − Hpb·100).
+        mInp.addEventListener('input', () => {
+          const o = tr.hpb_m != null ? Math.round(tr.hpb_m * 100) : null;
+          if (o == null) return;
+          const L = parseNum(mInp.value);
+          pt.profondeur_cm = (L == null) ? null : +(L - o).toFixed(2);
+          pInp.value = pt.profondeur_cm == null ? '' : pt.profondeur_cm;
           this.refreshProfileChart();
           this.refreshTransectCalc();
           this.scheduleSave();
@@ -1867,6 +1919,8 @@ const App = {
           // Sinon on inverse le signe
           pt.profondeur_cm = -pt.profondeur_cm;
           pInp.value = pt.profondeur_cm;
+          const o = tr.hpb_m != null ? Math.round(tr.hpb_m * 100) : null;
+          if (o != null) mInp.value = pt.profondeur_cm == null ? '' : +(pt.profondeur_cm + o).toFixed(2);
           this.refreshProfileChart();
           this.refreshTransectCalc();
           this.scheduleSave();
