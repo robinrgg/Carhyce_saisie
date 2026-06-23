@@ -1795,7 +1795,7 @@ const App = {
         <tr>
           <th>n°</th>
           <th>Distance (m)</th>
-          <th style="color:#1b5e20">Lecture mire (cm)<br><small>appoint (vert) · hauteur sous le plein bord</small></th>
+          <th style="color:#1b5e20">Lecture mire (cm)<br><small>hauteur sous le plein bord</small></th>
           <th>Profondeur (cm)<br><small>négatif = berge / hors d'eau</small></th>
           <th>Substrat min.</th>
           <th>Add. 1</th>
@@ -1833,7 +1833,7 @@ const App = {
         // la profondeur (= profondeur + Hpb·100) à la réouverture.
         const mireTd = document.createElement('td');
         mireTd.className = 'col-mire';
-        mireTd.style.minWidth = '92px';
+        mireTd.style.minWidth = '46px';
         const mInp = document.createElement('input');
         mInp.type = 'text'; mInp.inputMode = 'decimal'; mInp.autocomplete = 'off';
         mInp.dataset.skipNext = '1';   // hors enchaînement « suivant »
@@ -1965,7 +1965,9 @@ const App = {
 
         // Additionnel 1
         const a1Td = document.createElement('td');
+        a1Td.style.minWidth = '48px';
         const a1Sel = document.createElement('select');
+        a1Sel.style.minWidth = '3.4em';
         const a1Blank = document.createElement('option'); a1Blank.value=''; a1Blank.textContent='—';
         a1Sel.appendChild(a1Blank);
         NOM.substrats_additionnels.forEach(s => {
@@ -1981,6 +1983,7 @@ const App = {
 
         // Additionnel 2
         const a2Td = document.createElement('td');
+        a2Td.style.minWidth = '48px';
         const a2Sel = a1Sel.cloneNode(true);
         a2Sel.value = pt.substrat_add_2 || '';
         a2Sel.addEventListener('change', () => { pt.substrat_add_2 = a2Sel.value; this.scheduleSave(); });
