@@ -79,6 +79,13 @@ const DB = {
   newOperation() {
     const id = 'op_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
     const now = new Date().toISOString();
+    // Date et heure LOCALES de l'appareil (sur le terrain en France = heure de
+    // Paris). toISOString() renvoie l'heure UTC, décalée de 1 à 2 h selon la
+    // saison : ne pas l'utiliser pour les champs présentés à l'opérateur.
+    const _d = new Date();
+    const _p = n => String(n).padStart(2, '0');
+    const dateLocale = `${_d.getFullYear()}-${_p(_d.getMonth() + 1)}-${_p(_d.getDate())}`;
+    const heureLocale = `${_p(_d.getHours())}:${_p(_d.getMinutes())}`;
     return {
       id,
       meta: {
@@ -92,8 +99,8 @@ const DB = {
         libelle: '',
         cours_eau: '',
         masse_eau: '',
-        date: now.slice(0, 10),
-        heure: now.slice(11, 16),
+        date: dateLocale,
+        heure: heureLocale,
         operateurs: '',
         conditions_meteo: '',
         conditions_hydrologiques: '',

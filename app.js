@@ -747,6 +747,29 @@ const App = {
     return f;
   },
 
+  // Affiche un bouton « suivant » sur le clavier mobile et passe au champ de
+  // saisie suivant (input uniquement, les listes déroulantes sont ignorées)
+  // à l'intérieur de `container`. Pratique pour enchaîner distance/profondeur
+  // et les 100 cases de granulométrie sans repointer chaque cellule.
+  _wireNext(inp, container) {
+    inp.enterKeyHint = 'next';
+    inp.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const foci = Array.from(container.querySelectorAll('input'))
+        .filter(el => el.type !== 'button' && !el.disabled && !el.readOnly
+                       && el.offsetParent !== null);
+      const i = foci.indexOf(inp);
+      if (i > -1 && i + 1 < foci.length) {
+        const nx = foci[i + 1];
+        nx.focus();
+        if (nx.select) nx.select();
+      } else {
+        inp.blur();
+      }
+    });
+  },
+
   calcField({ label, value, unit, note }) {
     const f = document.createElement('div');
     f.className = 'field';
@@ -1085,6 +1108,7 @@ const App = {
         });
         cell.appendChild(inp);
         grid.appendChild(cell);
+        this._wireNext(inp, grid);
       }
       body.appendChild(grid);
 
@@ -1696,7 +1720,7 @@ const App = {
         const estPremier = tr.points.length === 0;
         tr.points.push({
           distance_m: estPremier ? 0 : (lastDist != null ? +lastDist : 0) + step,
-          profondeur_cm: estPremier && tr.hpb_m != null ? -tr.hpb_m * 100 : null,
+          profondeur_cm: estPremier && tr.hpb_m != null ? -Math.round(tr.hpb_m * 100) : null,
           substrat_min: estPremier ? '-' : 'TV',
           substrat_add_1: '',
           substrat_add_2: '',
@@ -1723,7 +1747,7 @@ const App = {
           let prof = null;
           let substr = 'TV';
           if (first) {
-            if (tr.hpb_m != null) prof = -tr.hpb_m * 100;
+            if (tr.hpb_m != null) prof = -Math.round(tr.hpb_m * 100);
             substr = '-';
           }
           tr.points.push({
@@ -1792,11 +1816,14 @@ const App = {
         });
         distTd.appendChild(dInp);
         row.appendChild(distTd);
+        this._wireNext(dInp, table);
 
         // Profondeur — bouton ± à gauche pour inverser le signe
         // (les claviers numériques mobiles n'affichent pas toujours le -)
         const profTd = document.createElement('td');
         profTd.className = 'col-prof';
+        // Largeur suffisante pour le bouton ± plus « -NNN » (jusqu'à 3 chiffres).
+        profTd.style.minWidth = '104px';
         const profWrap = document.createElement('div');
         profWrap.style.display = 'flex';
         profWrap.style.gap = '2px';
@@ -1822,6 +1849,7 @@ const App = {
         pInp.type = 'text'; pInp.inputMode = 'decimal'; pInp.autocomplete = 'off';
         pInp.value = pt.profondeur_cm == null ? '' : pt.profondeur_cm;
         pInp.style.flex = '1';
+        pInp.style.minWidth = '3.6em';
         pInp.addEventListener('input', () => {
           pt.profondeur_cm = parseNum(pInp.value);
           this.refreshProfileChart();
@@ -1848,6 +1876,7 @@ const App = {
         profWrap.appendChild(pInp);
         profTd.appendChild(profWrap);
         row.appendChild(profTd);
+        this._wireNext(pInp, table);
 
         // Substrat principal
         // - Pour le premier point du transect (distance = 0, sur la berge) :
@@ -1982,7 +2011,11 @@ const App = {
         body.appendChild(sub);
       });
       const g = this.grid();
-      g.appendChild(this.field({ label: 'Strate la plus recouvrante', type: 'select', options: NOM.strate_plus_recouvrante, value: r.plus_recouvrante, onChange: v => r.plus_recouvrante = v }));
+      // La strate la plus recouvrante ne peut être qu'arborée ou arbustive :
+      // on exclut l'herbacée de la liste déroulante.
+      const optsRecouvrante = (NOM.strate_plus_recouvrante || []).filter(o =>
+        !/herbac/i.test(typeof o === 'string' ? o : (o.label || o.libelle || o.value || o.code || '')));
+      g.appendChild(this.field({ label: 'Strate la plus recouvrante', type: 'select', options: optsRecouvrante, value: r.plus_recouvrante, onChange: v => r.plus_recouvrante = v }));
       body.appendChild(g);
       root.appendChild(section);
     });
