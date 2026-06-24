@@ -4,7 +4,7 @@
 
 // Version du code applicatif. À incrémenter en même temps que CACHE_VERSION
 // dans sw.js. Affichée à l'accueil pour vérifier la version en cours sur mobile.
-const APP_VERSION = 'v17';
+const APP_VERSION = 'v18';
 
 // Parseur de nombre acceptant indifféremment point ou virgule comme séparateur
 function parseNum(v) {
@@ -329,8 +329,10 @@ const App = {
     };
     // Station
     const st = op.station;
-    const stFilled = [st.code, st.cours_eau, st.date, st.lpb_ev_mesures[0], st.debit_m3s].filter(v => v !== null && v !== '').length;
-    set('prog-station', stFilled >= 5 ? '✓ saisie' : (stFilled === 0 ? 'À saisir' : `${stFilled} champs renseignés`), stFilled >= 5);
+    // La date est pré-remplie automatiquement à la création : on ne la compte
+    // pas comme un champ « renseigné » par l'opérateur.
+    const stFilled = [st.code, st.cours_eau, st.lpb_ev_mesures[0], st.debit_m3s].filter(v => v !== null && v !== '').length;
+    set('prog-station', stFilled >= 4 ? '✓ saisie' : (stFilled === 0 ? 'À saisir' : `${stFilled} champs renseignés`), stFilled >= 4);
     // Granulo
     const gNb = op.granulometrie.mesures_mm.filter(x => x != null && x !== '').length;
     set('prog-granulo', gNb === 0 ? 'À saisir' : `${gNb}/100 mesures`, gNb >= 100);
@@ -1470,14 +1472,20 @@ const App = {
       convWrap.appendChild(btnConv);
       body.appendChild(convWrap);
 
-      // Nombre de bâtonnets
+      // Nombre de bâtonnets — le redimensionnement (et le re-rendu) ne se fait
+      // qu'à la validation du champ (blur/Entrée), pas à chaque frappe : sinon
+      // impossible d'effacer la valeur pour en ressaisir une autre.
       const nb = this.grid();
-      nb.appendChild(this.field({
+      const nbFld = this.field({
         label: 'Nb de bâtonnets posés',
         type: 'number',
         value: r.nb_batonnets,
-        onChange: v => {
-          const target = Math.max(1, Math.min(10, parseInt(v) || 4));
+        onChange: v => { r.nb_batonnets = v; }   // stockage live, sans clamp ni rebuild
+      });
+      const nbInp = nbFld.querySelector('input');
+      if (nbInp) {
+        nbInp.addEventListener('change', () => {
+          const target = Math.max(1, Math.min(10, parseInt(nbInp.value, 10) || 4));
           r.nb_batonnets = target;
           while (r.batonnets.length < target) {
             const i = r.batonnets.length + 1;
@@ -1485,8 +1493,10 @@ const App = {
           }
           while (r.batonnets.length > target) r.batonnets.pop();
           this.renderColmatage();
-        }
-      }));
+          this.scheduleSave();
+        });
+      }
+      nb.appendChild(nbFld);
       body.appendChild(nb);
 
       // Tableau compact des bâtonnets
