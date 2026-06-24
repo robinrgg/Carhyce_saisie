@@ -1672,7 +1672,35 @@ const App = {
       g.appendChild(this.field({ label: 'Rive de départ', type: 'select', options: NOM.rive, value: tr.rive_depart, onChange: v => tr.rive_depart = v, note: 'Rive où débute la mesure' }));
       g.appendChild(this.field({ label: 'Lpb — Largeur plein bord (m)', type: 'number', value: tr.lpb_m, onChange: v => { tr.lpb_m = v; this.refreshTransectCalc(); } }));
       g.appendChild(this.field({ label: 'Lm — Largeur mouillée (m)', type: 'number', value: tr.lm_m, onChange: v => { tr.lm_m = v; this.refreshTransectCalc(); } }));
-      g.appendChild(this.field({ label: 'Hpb — Hauteur plein bord (m)', type: 'number', value: tr.hpb_m, onChange: v => { tr.hpb_m = v; this.refreshTransectCalc(); } }));
+      // Hpb : au changement (commit), recaler les profondeurs HORS D'EAU
+      // (négatives, lues à la mire) de (Hpb_avant − Hpb_après)·100, ce qui
+      // préserve les lectures mire. Les points EN EAU (positifs, saisis
+      // directement sous la surface) ne dépendent pas de Hpb : on n'y touche pas.
+      const hpbFld = this.field({ label: 'Hpb — Hauteur plein bord (m)', type: 'number', value: tr.hpb_m, onChange: v => { tr.hpb_m = v; this.refreshTransectCalc(); } });
+      const hpbInp = hpbFld.querySelector('input');
+      let _hpbAvant = tr.hpb_m;
+      if (hpbInp) {
+        hpbInp.addEventListener('focus', () => { _hpbAvant = tr.hpb_m; });
+        hpbInp.addEventListener('change', () => {
+          const avant = _hpbAvant, apres = tr.hpb_m;
+          _hpbAvant = apres;
+          if (avant == null || apres == null) return;
+          const dCm = Math.round(avant * 100) - Math.round(apres * 100);
+          if (dCm === 0) return;
+          const aDecaler = tr.points.filter(p => p.profondeur_cm != null && p.profondeur_cm < 0);
+          if (!aDecaler.length) return;
+          const ok = confirm(
+            `Hpb modifié (${avant} → ${apres} m).\n\n`
+            + `Recaler les ${aDecaler.length} profondeur(s) hors d'eau (points négatifs, `
+            + `lus à la mire) avec le nouveau Hpb ? Les lectures mire sont conservées ; `
+            + `les points en eau (positifs) ne changent pas.`);
+          if (!ok) return;
+          aDecaler.forEach(p => { p.profondeur_cm = +(p.profondeur_cm + dCm).toFixed(2); });
+          this.renderTransect();
+          this.scheduleSave();
+        });
+      }
+      g.appendChild(hpbFld);
       body.appendChild(g);
 
       // Distance inter-points appliquée + Peau sur la même ligne
