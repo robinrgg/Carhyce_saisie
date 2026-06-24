@@ -2,6 +2,10 @@
    CARHYCE Saisie Terrain — Application principale
    ============================================================ */
 
+// Version du code applicatif. À incrémenter en même temps que CACHE_VERSION
+// dans sw.js. Affichée à l'accueil pour vérifier la version en cours sur mobile.
+const APP_VERSION = 'v17';
+
 // Parseur de nombre acceptant indifféremment point ou virgule comme séparateur
 function parseNum(v) {
   if (v == null || v === '') return null;
@@ -29,6 +33,26 @@ const App = {
     this.bindBackButton();
     await this.showHome();
     this.registerSW();
+    this.showVersion();
+  },
+
+  // Affiche la version du code et celle du cache actif du service worker.
+  // Si les deux concordent (ex. « v17 · cache v17 »), l'appareil exécute bien
+  // la dernière version. Une divergence signale un cache en cours de bascule.
+  showVersion() {
+    const el = document.getElementById('app-version');
+    if (!el) return;
+    el.textContent = 'Version ' + APP_VERSION;
+    if ('caches' in window) {
+      caches.keys().then(keys => {
+        const c = keys.find(k => k.startsWith('carhyce-'));
+        if (c) {
+          const cv = c.replace('carhyce-', '');
+          el.textContent = 'Version ' + APP_VERSION + ' · cache ' + cv;
+          if (cv !== APP_VERSION) el.style.color = '#b26a00';
+        }
+      }).catch(() => {});
+    }
   },
 
   // Intercepte le bouton retour du téléphone (Android) ou le geste retour
