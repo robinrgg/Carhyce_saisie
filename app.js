@@ -4,7 +4,7 @@
 
 // Version du code applicatif. À incrémenter en même temps que CACHE_VERSION
 // dans sw.js. Affichée à l'accueil pour vérifier la version en cours sur mobile.
-const APP_VERSION = 'v18';
+const APP_VERSION = 'v19';
 
 // Parseur de nombre acceptant indifféremment point ou virgule comme séparateur
 function parseNum(v) {
@@ -1399,8 +1399,16 @@ const App = {
   // ============================================================
   //   ÉCRAN COLMATAGE
   // ============================================================
-  renderColmatage() {
-    const op = this.state.op;
+  // Crée un radier vierge (id = lettre), avec 4 bâtonnets par défaut.
+  _nouveauRadier(id) {
+    return {
+      id, lat: null, lon: null, x_l93: null, y_l93: null,
+      indice_position: '', remarques: '', nb_batonnets: 4,
+      batonnets: [1, 2, 3, 4].map(i => ({ code: id + i, etat: '', profondeur_oxy_cm: null })),
+    };
+  },
+
+  renderColmatage() {    const op = this.state.op;
     const c = op.colmatage;
     const root = document.getElementById('form-colmatage');
     root.innerHTML = '';
@@ -1472,31 +1480,42 @@ const App = {
       convWrap.appendChild(btnConv);
       body.appendChild(convWrap);
 
-      // Nombre de bâtonnets — le redimensionnement (et le re-rendu) ne se fait
-      // qu'à la validation du champ (blur/Entrée), pas à chaque frappe : sinon
-      // impossible d'effacer la valeur pour en ressaisir une autre.
-      const nb = this.grid();
-      const nbFld = this.field({
-        label: 'Nb de bâtonnets posés',
-        type: 'number',
-        value: r.nb_batonnets,
-        onChange: v => { r.nb_batonnets = v; }   // stockage live, sans clamp ni rebuild
-      });
-      const nbInp = nbFld.querySelector('input');
-      if (nbInp) {
-        nbInp.addEventListener('change', () => {
-          const target = Math.max(1, Math.min(10, parseInt(nbInp.value, 10) || 4));
-          r.nb_batonnets = target;
-          while (r.batonnets.length < target) {
-            const i = r.batonnets.length + 1;
-            r.batonnets.push({ code: r.id + i, etat: '', profondeur_oxy_cm: null });
-          }
-          while (r.batonnets.length > target) r.batonnets.pop();
-          this.renderColmatage();
-          this.scheduleSave();
-        });
-      }
-      nb.appendChild(nbFld);
+      // Nombre de bâtonnets — stepper − / + : ajout/retrait d'un bâtonnet en un
+      // tap, sans saisie clavier ni validation (plus pratique sur le terrain).
+      const nb = document.createElement('div');
+      nb.style.display = 'flex';
+      nb.style.alignItems = 'center';
+      nb.style.gap = '0.6rem';
+      nb.style.margin = '0.6rem 0';
+      const nbLab = document.createElement('span');
+      nbLab.textContent = 'Nb de bâtonnets posés :';
+      nbLab.style.fontWeight = '600';
+      const setN = (target) => {
+        target = Math.max(1, Math.min(10, target));
+        r.nb_batonnets = target;
+        while (r.batonnets.length < target) {
+          const i = r.batonnets.length + 1;
+          r.batonnets.push({ code: r.id + i, etat: '', profondeur_oxy_cm: null });
+        }
+        while (r.batonnets.length > target) r.batonnets.pop();
+        this.renderColmatage();
+        this.scheduleSave();
+      };
+      const moins = document.createElement('button');
+      moins.type = 'button'; moins.className = 'secondary-btn';
+      moins.textContent = '−'; moins.style.minWidth = '2.6em';
+      moins.disabled = r.batonnets.length <= 1;
+      moins.addEventListener('click', () => setN(r.batonnets.length - 1));
+      const cnt = document.createElement('span');
+      cnt.textContent = r.batonnets.length;
+      cnt.style.minWidth = '1.6em'; cnt.style.textAlign = 'center';
+      cnt.style.fontWeight = '700'; cnt.style.fontSize = '1.1rem';
+      const plus = document.createElement('button');
+      plus.type = 'button'; plus.className = 'secondary-btn';
+      plus.textContent = '+'; plus.style.minWidth = '2.6em';
+      plus.disabled = r.batonnets.length >= 10;
+      plus.addEventListener('click', () => setN(r.batonnets.length + 1));
+      nb.append(nbLab, moins, cnt, plus);
       body.appendChild(nb);
 
       // Tableau compact des bâtonnets
@@ -1566,8 +1585,47 @@ const App = {
       synth.style.marginTop = '0.5rem';
       body.appendChild(synth);
 
+      // Suppression de ce radier
+      const delWrap = document.createElement('div');
+      delWrap.className = 'card-action';
+      delWrap.style.marginTop = '0.6rem';
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'secondary-btn';
+      delBtn.textContent = `🗑 Supprimer le radier ${r.id}`;
+      delBtn.addEventListener('click', () => {
+        if (!confirm(`Supprimer définitivement le radier ${r.id} et ses ${r.batonnets.length} bâtonnet(s) ?`)) return;
+        const i = c.radiers.indexOf(r);
+        if (i > -1) c.radiers.splice(i, 1);
+        this.renderColmatage();
+        this.scheduleSave();
+        this.toast(`Radier ${r.id} supprimé`);
+      });
+      delWrap.appendChild(delBtn);
+      body.appendChild(delWrap);
+
       root.appendChild(section);
     });
+
+    // Ajout d'un radier
+    {
+      const addWrap = document.createElement('div');
+      addWrap.className = 'card-action';
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'primary-btn';
+      addBtn.textContent = '＋ Ajouter un radier';
+      addBtn.addEventListener('click', () => {
+        const used = c.radiers.map(r => (r.id || 'A').charCodeAt(0));
+        const code = String.fromCharCode((used.length ? Math.max(...used) : 64) + 1);
+        c.radiers.push(this._nouveauRadier(code));
+        this.renderColmatage();
+        this.scheduleSave();
+        this.toast(`Radier ${code} ajouté`);
+      });
+      addWrap.appendChild(addBtn);
+      root.appendChild(addWrap);
+    }
 
     // Synthèse globale
     {
